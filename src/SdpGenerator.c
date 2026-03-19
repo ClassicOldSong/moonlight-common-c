@@ -299,6 +299,17 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
             EncryptionFeaturesEnabled |= SS_ENC_AUDIO;
         }
 
+        // If microphone encryption is supported by the host and desired by the client, use it
+        if ((EncryptionFeaturesSupported & SS_ENC_MICROPHONE) && (StreamConfig.encryptionFlags & ENCFLG_MICROPHONE)) {
+            EncryptionFeaturesEnabled |= SS_ENC_MICROPHONE;
+        }
+        else if ((EncryptionFeaturesRequested & SS_ENC_MICROPHONE) && !(StreamConfig.encryptionFlags & ENCFLG_MICROPHONE)) {
+            // If microphone encryption is explicitly requested by the host but *not* by the client,
+            // we'll encrypt anyway (since we are capable of doing so) to preserve microphone passthrough.
+            Limelog("Enabling microphone encryption by host request despite client opt-out. Microphone passthrough may be unavailable otherwise!");
+            EncryptionFeaturesEnabled |= SS_ENC_MICROPHONE;
+        }
+
         snprintf(payloadStr, sizeof(payloadStr), "%u", EncryptionFeaturesEnabled);
         err |= addAttributeString(&optionHead, "x-ss-general.encryptionEnabled", payloadStr);
 

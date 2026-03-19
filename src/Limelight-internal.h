@@ -37,9 +37,11 @@ extern uint16_t RtspPortNumber;
 extern uint16_t ControlPortNumber;
 extern uint16_t AudioPortNumber;
 extern uint16_t VideoPortNumber;
+extern uint16_t MicPortNumber;
 
 extern SS_PING AudioPingPayload;
 extern SS_PING VideoPingPayload;
+extern SS_PING MicPingPayload;
 extern uint32_t ControlConnectData;
 
 extern uint32_t SunshineFeatureFlags;
@@ -48,10 +50,15 @@ extern uint32_t SunshineFeatureFlags;
 #define SS_ENC_CONTROL_V2 0x01
 #define SS_ENC_VIDEO 0x02
 #define SS_ENC_AUDIO 0x04
+#define SS_ENC_MICROPHONE 0x08
 
 extern uint32_t EncryptionFeaturesSupported;
 extern uint32_t EncryptionFeaturesRequested;
 extern uint32_t EncryptionFeaturesEnabled;
+
+#define MIC_PACKET_MAGIC 0x12345678
+#define MIC_PACKET_TYPE_OPUS 0x61
+#define MAX_MIC_PACKET_SIZE 1400
 
 // ENet channel ID values
 #define CTRL_CHANNEL_GENERIC      0x00
@@ -152,3 +159,10 @@ int initializeInputStream(void);
 void destroyInputStream(void);
 int startInputStream(void);
 int stopInputStream(void);
+
+int initializeMicrophoneStream(void);
+void destroyMicrophoneStream(void);
+int LiSendMicrophoneOpusData(const unsigned char* opusData, int opusLength);
+int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, uint32_t frameDurationSamples);
+bool LiIsMicrophoneEncryptionEnabled(void);
+bool LiIsMicrophoneStreamActive(void);

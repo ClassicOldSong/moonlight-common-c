@@ -929,6 +929,7 @@ bool parseSdpAttributeToInt(const char* payload, const char* name, int* val) {
 // Perform RTSP Handshake with the streaming server machine as part of the connection process
 int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     int ret;
+    bool hostSupportsMic = false;
 
     LC_ASSERT(RtspPortNumber != 0);
 
@@ -938,6 +939,8 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
     hasSessionId = false;
     controlStreamId = APP_VERSION_AT_LEAST(7, 1, 431) ? "streamid=control/13/0" : "streamid=control/1/0";
     AudioEncryptionEnabled = false;
+    MicPortNumber = 0;
+    memset(&MicPingPayload, 0, sizeof(MicPingPayload));
     encryptedRtspEnabled = serverInfo->rtspSessionUrl && strstr(serverInfo->rtspSessionUrl, "rtspenc://");
     encryptionCtx = PltCreateCryptoContext();
     decryptionCtx = PltCreateCryptoContext();
@@ -1141,6 +1144,12 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         }
         EncryptionFeaturesEnabled = 0;
 
+        hostSupportsMic = strstr(response.payload, "a=rtpmap:96 opus/48000/1") != NULL ||
+                          strstr(response.payload, "a=rtpmap:96 opus/48000/2") != NULL;
+        if (StreamConfig.enableMic && !hostSupportsMic) {
+            Limelog("Host does not advertise negotiated microphone support; continuing without microphone passthrough\n");
+        }
+
         // Parse the Opus surround parameters out of the RTSP DESCRIBE response.
         ret = parseOpusConfigurations(&response);
         if (ret != 0) {
@@ -1262,7 +1271,43 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
 
         freeMessage(&response);
     }
-    
+    if (StreamConfig.enableMic && hostSupportsMic) {
+        RTSP_MESSAGE response;
+        int error = -1;
+        char* pingPayload;
+
+        if (!setupStream(&response,
+                         AppVersionQuad[0] >= 5 ? "streamid=mic/0/0" : "streamid=mic",
+                         &error)) {
+            Limelog("RTSP SETUP streamid=mic request failed: %d\n", error);
+            ret = error;
+            goto Exit;
+        }
+
+        if (response.message.response.statusCode != 200) {
+            Limelog("RTSP SETUP streamid=mic request failed: %d\n",
+                response.message.response.statusCode);
+            ret = response.message.response.statusCode;
+            freeMessage(&response);
+            goto Exit;
+        }
+
+        LC_ASSERT(MicPortNumber == 0);
+        if (!parseServerPortFromTransport(&response, &MicPortNumber)) {
+            MicPortNumber = 47996;
+            Limelog("Microphone port: %u (RTSP parsing failed)\n", MicPortNumber);
+        }
+        else {
+            Limelog("Microphone port: %u\n", MicPortNumber);
+        }
+
+        pingPayload = getOptionContent(response.options, "X-SS-Ping-Payload");
+        if (pingPayload != NULL && strlen(pingPayload) == sizeof(MicPingPayload.payload)) {
+            memcpy(MicPingPayload.payload, pingPayload, sizeof(MicPingPayload.payload));
+        }
+
+        freeMessage(&response);
+    }
     if (AppVersionQuad[0] >= 5) {
         RTSP_MESSAGE response;
         int error = -1;
@@ -1382,6 +1427,27 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
                 Limelog("RTSP PLAY streamid=audio failed: %d\n",
                     response.message.response.statusCode);
                 ret = response.message.response.statusCode;
+                goto Exit;
+            }
+
+            freeMessage(&response);
+        }
+
+        if (StreamConfig.enableMic && hostSupportsMic) {
+            RTSP_MESSAGE response;
+            int error = -1;
+
+            if (!playStream(&response, "streamid=mic", &error)) {
+                Limelog("RTSP PLAY streamid=mic request failed: %d\n", error);
+                ret = error;
+                goto Exit;
+            }
+
+            if (response.message.response.statusCode != 200) {
+                Limelog("RTSP PLAY streamid=mic failed: %d\n",
+                    response.message.response.statusCode);
+                ret = response.message.response.statusCode;
+                freeMessage(&response);
                 goto Exit;
             }
 
