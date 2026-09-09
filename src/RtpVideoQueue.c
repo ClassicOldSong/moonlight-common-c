@@ -615,11 +615,13 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
                     // Notify the host of the loss of this frame
                     if (!queue->reportedLostFrame) {
                         notifyFrameLost(queue->currentFrameNumber, false);
-                        queue->reportedLostFrame = true;
                     }
 
+                    // NB: We reset reportedLostFrame here because we don't want to suppress
+                    // the reporting of the _next_ frame if it's lost.
                     queue->currentFrameNumber++;
                     queue->multiFecCurrentBlockNumber = 0;
+                    queue->reportedLostFrame = false;
                     return RTPF_RET_REJECTED;
                 }
             }
@@ -650,13 +652,16 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
 
             // Notify the host of the loss of this frame
             if (!queue->reportedLostFrame) {
-                notifyFrameLost(queue->currentFrameNumber, false);
-                queue->reportedLostFrame = true;
+                notifyFrameLost(nvPacket->frameIndex, false);
             }
 
             // We dropped a block of this frame, so we must skip to the next one.
+            //
+            // NB: We reset reportedLostFrame here because we don't want to suppress
+            // the reporting of the _next_ frame if it's lost.
             queue->currentFrameNumber = nvPacket->frameIndex + 1;
             queue->multiFecCurrentBlockNumber = 0;
+            queue->reportedLostFrame = false;
             return RTPF_RET_REJECTED;
         }
 
